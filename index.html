@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>For My Love</title>
+
+<style>
+  /* ✅ Мобилка: стабильная высота экрана (без прыжков адресной строки) */
+  body{
+    margin:0;
+    background:#000;
+    overflow:hidden;
+    font-family: Arial, sans-serif;
+    height: 100svh;
+  }
+
+  #matrix{ position:fixed; inset:0; z-index:1; display:block; }
+  #fx{ position:fixed; inset:0; z-index:6; pointer-events:none; display:block; }
+
+  .hidden{ opacity:0; pointer-events:none; }
+
+  /* ✅ Блок с фото + подписью (слайды) */
+  .photoCard{
+    position:fixed;
+    left:50%;
+    top:50%;
+    transform:translate(-50%,-50%);
+    z-index:5;
+    pointer-events:none;
+    opacity:0;
+    transition: opacity .6s ease;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+  }
+  .photoCard.show{ opacity:1; }
+
+  .photoFrame{
+    position:relative;
+    border-radius:22px;
+    overflow:hidden;
+    box-shadow:
+      0 0 24px rgba(255,105,180,.35),
+      0 0 52px rgba(255,105,180,.25);
+  }
+  .photoFrame img{
+    width:min(280px, 70vw);
+    height:auto;
+    display:block;
+    border-radius:22px;
+  }
+
+  /* ✅ Мобилка: подписи не обрезаем, разрешаем перенос */
+  .photoCaption,
+  .finalCaption{
+    white-space: normal;
+    line-height: 1.15;
+    max-width: min(92vw, 520px);
+    word-break: break-word;
+  }
+
+  .photoCaption{
+    margin-top:12px;
+    font-size: clamp(18px, 4vw, 32px);
+    font-weight:900;
+    color:#fff;
+    text-align:center;
+    text-shadow:
+      0 0 10px rgba(255,255,255,.35),
+      0 0 24px rgba(255,105,180,.22);
+    padding: 0 14px;
+  }
+
+  /* ✅ ФИНАЛ */
+  .finalWrap{
+    position:fixed;
+    left:50%;
+    top:50%;
+    transform:translate(-50%,-50%);
+    z-index:5;
+    pointer-events:none;
+    opacity:0;
+    transition: opacity .8s ease;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:8px;              /* ✅ ближе к фото */
+    width:100%;
+    padding:0 10px;
+  }
+  .finalWrap.show{ opacity:1; }
+
+  .finalPhoto{
+    width:min(360px, 86vw); /* ✅ лучше под телефон */
+    border-radius:22px;
+    overflow:hidden;
+    box-shadow:
+      0 0 18px rgba(255,105,180,.18),
+      0 0 50px rgba(255,105,180,.12);
+  }
+  .finalPhoto img{
+    width:100%;
+    height:auto;
+    display:block;
+  }
+
+  .finalCaption{
+    font-size: clamp(22px, 5.2vw, 46px);
+    font-weight:900;
+    color:#fff;
+    text-align:center;
+    text-shadow:
+      0 0 12px rgba(255,255,255,.40),
+      0 0 28px rgba(255,105,180,.26);
+    padding: 0 10px;
+    user-select:none;
+    position:relative;
+    z-index:10;
+    margin-top:2px; /* ✅ прям под фото */
+  }
+
+  /* ✅ если экран низкий — уменьшаем фото, чтобы всё помещалось красиво */
+  @media (max-height: 740px){
+    .photoFrame img{ width: min(260px, 76vw); }
+    .finalPhoto{ width: min(330px, 86vw); }
+  }
+  .emoji3{
+   white-space: nowrap;      /* ✅ три сердечка всегда вместе */
+   display: inline-block;    /* ✅ не разрывает на перенос */
+  }
+
+</style>
+</head>
+
+<body>
+<canvas id="matrix"></canvas>
+
+<!-- ✅ Фото-слайды (1..5) -->
+<div class="photoCard" id="photoCard">
+  <div class="photoFrame" id="photoFrame">
+    <img id="lovePhoto" src="photos/1.jpg" alt="love"/>
+  </div>
+  <div class="photoCaption" id="photoCaption">Солнышко моё💖</div>
+</div>
+
+<!-- ✅ Финал -->
+<div class="finalWrap hidden" id="finalWrap">
+  <div class="finalPhoto" id="finalPhoto">
+    <img id="finalImg" src="photos/6.jpg" alt="final"/>
+  </div>
+    <div class="finalCaption" id="finalCaption">
+    Я очень сильно тебя люблю, любовушка моя <span class="emoji3">💖💖💖</span>
+    </div>
+</div>
+
+<canvas id="fx"></canvas>
+
+<script>
+/* ===========================================================
+   НАСТРОЙКИ
+   =========================================================== */
+const FINAL_PHOTO_SRC = "photos/6.jpg";
+const FINAL_TEXT = "Я очень сильно тебя люблю, любовушка моя💖💖💖";
+
+/* Слайды (1..5) */
+const SLIDES = [
+  { src: "photos/1.jpg", text: "Солнышко моё💖" },
+  { src: "photos/2.jpg", text: "Ты моё чудо😍" },
+  { src: "photos/3.jpg", text: "Моя милашка🤗🤗🤗" },
+  { src: "photos/4.jpg", text: "Моя принцесса😚😚😙" },
+  { src: "photos/5.jpg", text: "Этот мир красив - потому что в нём есть ты🥰🥰🥰" },
+];
+
+/* ✅ Тайминги (мс) — добавили паузы между слайдами */
+const T = {
+  show3: 0,
+  explode3: 1200,
+  show2: 2000,
+  explode2: 3200,
+  show1: 4000,
+  explode1: 5600,
+  clearAfter1: 6800,
+
+  slidesStart: 7200,
+
+  slideDuration: 3200,  // сколько слайд висит
+  fadeOutMs: 600,       // под CSS transition (.6s)
+  pauseBetween: 450,    // ✅ пауза после исчезновения перед след. слайдом
+
+  finalShow: null
+};
+
+const DOT_FADE  = 0.012;
+const DUST_FADE = 0.007;
+
+/* ===========================================================
+   Утилиты размеров (✅ мобилка: стабильные размеры)
+   =========================================================== */
+function VW(){ return document.documentElement.clientWidth; }
+function VH(){ return document.documentElement.clientHeight; }
+
+/* ===========================================================
+   HiDPI
+   =========================================================== */
+const DPR = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+function setupCanvas(canvas, ctx){
+  const w = VW(), h = VH();
+  canvas.width  = Math.floor(w * DPR);
+  canvas.height = Math.floor(h * DPR);
+  canvas.style.width  = w + "px";
+  canvas.style.height = h + "px";
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+
+/* ===========================================================
+   1) ДОЖДЬ
+   =========================================================== */
+const m = document.getElementById("matrix");
+const mctx = m.getContext("2d");
+
+const letters = "01LOVEYOU♡♥".split("");
+let fontSize = 14, columns = 0, drops = [], speeds = [];
+
+function initRain(){
+  setupCanvas(m, mctx);
+  columns = Math.floor(VW() / fontSize);
+  drops = new Array(columns).fill(0).map(() => Math.random() * VH() / fontSize);
+  speeds = new Array(columns).fill(0).map(() => 0.22 + Math.random() * 0.62);
+}
+
+function drawRain(){
+  const w = VW(), h = VH();
+
+  mctx.fillStyle = "rgba(0,0,0,0.06)";
+  mctx.fillRect(0,0,w,h);
+
+  mctx.fillStyle = "#ff69b4";
+  mctx.font = fontSize + "px monospace";
+
+  for(let i=0;i<drops.length;i++){
+    const x = i*fontSize;
+    const y = drops[i]*fontSize;
+    const ch = letters[(Math.random()*letters.length)|0];
+    mctx.fillText(ch, x, y);
+
+    if(Math.random()<0.01){
+      mctx.fillStyle = "rgba(255,180,220,0.65)";
+      mctx.fillText(ch, x, y-fontSize);
+      mctx.fillStyle = "#ff69b4";
+    }
+
+    drops[i] += speeds[i];
+    if(y > h && Math.random() > 0.975){
+      drops[i] = 0;
+      speeds[i] = 0.22 + Math.random() * 0.62;
+    }
+  }
+}
+
+/* ===========================================================
+   2) FX: цифры + распад + сердечки
+   =========================================================== */
+const fx = document.getElementById("fx");
+const fxctx = fx.getContext("2d");
+function initFX(){ setupCanvas(fx, fxctx); }
+
+initRain();
+initFX();
+
+addEventListener("resize", () => {
+  initRain();
+  initFX();
+});
+
+const off = document.createElement("canvas");
+const offCtx = off.getContext("2d");
+
+let dots = [];
+let debris = [];
+
+/* LED */
+const DOT_R   = 2.6;
+const DOT_GAP = 4.2;
+const GLOW    = 10;
+const DOT_COLOR = "rgba(255,255,255,0.95)";
+const ALPHA_THRESHOLD = 25;
+
+function buildDotsFromText(text){
+  const w = VW(), h = VH();
+  const base = Math.min(w, h);
+  const size = base * 0.42;
+
+  const cssW = Math.floor(size);
+  const cssH = Math.floor(size);
+
+  off.width  = Math.floor(cssW * DPR);
+  off.height = Math.floor(cssH * DPR);
+
+  offCtx.setTransform(DPR,0,0,DPR,0,0);
+  offCtx.clearRect(0,0,cssW,cssH);
+  offCtx.imageSmoothingEnabled = false;
+
+  offCtx.textAlign = "center";
+  offCtx.textBaseline = "middle";
+  offCtx.fillStyle = "#fff";
+  offCtx.font = `900 ${Math.floor(size*0.95)}px Impact, Arial Black, Arial`;
+  offCtx.fillText(text, cssW/2, cssH/2);
+
+  const img = offCtx.getImageData(0,0,off.width,off.height).data;
+  const startX = w/2 - cssW/2;
+  const startY = h/2 - cssH/2;
+
+  const arr = [];
+  const step = Math.max(2, Math.floor(DOT_GAP * DPR));
+
+  for(let y=0; y<off.height; y+=step){
+    for(let x=0; x<off.width; x+=step){
+      const sx = Math.min(off.width-1, x + Math.floor(step/2));
+      const sy = Math.min(off.height-1, y + Math.floor(step/2));
+      const idx = (sy*off.width + sx) * 4;
+      const a = img[idx+3];
+      if(a > ALPHA_THRESHOLD){
+        const cx = startX + (sx / DPR);
+        const cy = startY + (sy / DPR);
+        arr.push({ x:cx, y:cy, ox:cx, oy:cy, vx:0, vy:0, life:1, state:"solid" });
+      }
+    }
+  }
+  return arr;
+}
+
+function showFXText(text){ dots = buildDotsFromText(text); }
+
+function explodeDots(strength=3.2, dust=220){
+  const w = VW(), h = VH();
+
+  for(const d of dots){
+    d.state = "explode";
+    const ang = Math.random()*Math.PI*2;
+    const sp = strength*(0.6 + Math.random()*1.3);
+    d.vx = Math.cos(ang)*sp;
+    d.vy = Math.sin(ang)*sp - (0.5 + Math.random()*0.8);
+  }
+
+  for(let i=0;i<dust;i++){
+    const ang = Math.random()*Math.PI*2;
+    const sp = 0.7 + Math.random()*2.8;
+    debris.push({
+      x: w/2 + (Math.random()*140-70),
+      y: h/2 + (Math.random()*120-60),
+      vx: Math.cos(ang)*sp,
+      vy: Math.sin(ang)*sp - (0.6 + Math.random()*1.2),
+      life: 1
+    });
+  }
+}
+
+/* ===========================================================
+   СЕРДЕЧКИ-СВЕЧЕНИЕ (✅ в финале выключено)
+   =========================================================== */
+const photoCard  = document.getElementById("photoCard");
+const photoFrame = document.getElementById("photoFrame");
+const lovePhoto  = document.getElementById("lovePhoto");
+const photoCaption = document.getElementById("photoCaption");
+
+const finalWrap = document.getElementById("finalWrap");
+const finalCaption = document.getElementById("finalCaption");
+const finalImg = document.getElementById("finalImg");
+const finalPhotoEl = document.getElementById("finalPhoto");
+
+finalImg.src = FINAL_PHOTO_SRC;
+
+let glowMode = "none"; // none | photo | final
+let hearts = [];
+
+const HEARTS_MAX = 360;
+const HEARTS_SPAWN = 9;
+
+function spawnHeartsOnRectBorder(el){
+  const r = el.getBoundingClientRect();
+  if(r.width < 10) return;
+
+  for(let i=0;i<HEARTS_SPAWN;i++){
+    if(hearts.length >= HEARTS_MAX) break;
+    const side = (Math.random()*4)|0;
+    const t = Math.random();
+    let x, y;
+    const pad = 10;
+
+    if(side === 0){ x = r.left + t*r.width;  y = r.top - pad; }
+    else if(side === 1){ x = r.right + pad; y = r.top + t*r.height; }
+    else if(side === 2){ x = r.left + t*r.width; y = r.bottom + pad; }
+    else { x = r.left - pad; y = r.top + t*r.height; }
+
+    hearts.push(makeHeart(x,y));
+  }
+}
+
+function heartPoint(t){
+  const x = 16 * Math.pow(Math.sin(t), 3);
+  const y = 13*Math.cos(t) - 5*Math.cos(2*t) - 2*Math.cos(3*t) - Math.cos(4*t);
+  return {x, y};
+}
+
+/* (Оставлено — если захочешь вернуть финальное сердце позже) */
+function spawnHeartsOnFinalHeart(){
+  const pr = finalPhotoEl.getBoundingClientRect();
+  if(pr.width < 10) return;
+
+  const cx = pr.left + pr.width/2;
+  const cy = pr.top  + pr.height*0.50;
+
+  const desiredHeartW = pr.width * 1.90;
+  const scale = desiredHeartW / 32;
+
+  const halo = 1.04 + Math.random()*0.06;
+
+  for(let i=0;i<HEARTS_SPAWN;i++){
+    if(hearts.length >= HEARTS_MAX) break;
+
+    const t = Math.random() * Math.PI * 2;
+    const p = heartPoint(t);
+
+    const x = cx + (p.x * scale) * halo;
+    const y = cy - (p.y * scale) * halo;
+
+    hearts.push(makeHeart(x,y));
+  }
+}
+
+function makeHeart(x,y){
+  return {
+    x, y,
+    vx: (Math.random()*0.55 - 0.275),
+    vy: (Math.random()*0.55 - 0.275),
+    rot: Math.random()*Math.PI*2,
+    vr: (Math.random()*0.06 - 0.03),
+    s: 0.65 + Math.random()*0.85,
+    life: 1,
+    tw: Math.random()*Math.PI*2
+  };
+}
+
+function stepHearts(){
+  const active = glowMode !== "none";
+
+  if(active){
+    if(glowMode === "photo") spawnHeartsOnRectBorder(photoFrame);
+    if(glowMode === "final") spawnHeartsOnFinalHeart();
+  } else {
+    for(const h of hearts) h.life -= 0.03;
+  }
+
+  for(const h of hearts){
+    h.x += h.vx; h.y += h.vy;
+    h.vx *= 0.99; h.vy *= 0.99;
+    h.rot += h.vr; h.tw += 0.10;
+    h.life -= active ? 0.012 : 0.03;
+  }
+  hearts = hearts.filter(h => h.life > 0);
+}
+
+function drawHearts(){
+  if(hearts.length === 0) return;
+
+  const w = VW(), h = VH();
+  fxctx.save();
+
+  if(glowMode === "final"){
+    const cap = finalCaption.getBoundingClientRect();
+    fxctx.beginPath();
+    fxctx.rect(0, 0, w, h);
+    fxctx.rect(cap.left-24, cap.top-24, cap.width+48, cap.height+48);
+    fxctx.clip("evenodd");
+  }
+
+  fxctx.textAlign = "center";
+  fxctx.textBaseline = "middle";
+  fxctx.font = "18px Arial";
+  fxctx.shadowColor = "rgba(255,105,180,0.35)";
+  fxctx.shadowBlur = 18;
+
+  for(const hrt of hearts){
+    const a = Math.max(0, hrt.life) * (0.75 + 0.25*Math.sin(hrt.tw));
+    fxctx.globalAlpha = a;
+
+    fxctx.save();
+    fxctx.translate(hrt.x, hrt.y);
+    fxctx.rotate(hrt.rot);
+    fxctx.scale(hrt.s, hrt.s);
+    fxctx.fillStyle = "rgba(255,105,180,0.95)";
+    fxctx.fillText("♥", 0, 0);
+    fxctx.restore();
+  }
+
+  fxctx.restore();
+}
+
+function stepFX(){
+  for(const d of dots){
+    if(d.state === "solid"){
+      d.life = 0.88 + Math.sin((performance.now()*0.004) + d.ox*0.02)*0.12;
+      d.x += (d.ox - d.x)*0.12;
+      d.y += (d.oy - d.y)*0.12;
+    }else{
+      d.x += d.vx; d.y += d.vy;
+      d.vy += 0.06;
+      d.vx *= 0.985; d.vy *= 0.985;
+      d.life -= DOT_FADE;
+    }
+  }
+  dots = dots.filter(d => d.life > 0);
+
+  for(const p of debris){
+    p.x += p.vx; p.y += p.vy;
+    p.vy += 0.05;
+    p.vx *= 0.99; p.vy *= 0.99;
+    p.life -= DUST_FADE;
+  }
+  debris = debris.filter(p => p.life > 0);
+
+  stepHearts();
+}
+
+function drawFX(){
+  const w = VW(), h = VH();
+  fxctx.clearRect(0,0,w,h);
+
+  fxctx.save();
+  fxctx.shadowColor = "rgba(255,255,255,0.35)";
+  fxctx.shadowBlur = GLOW;
+  fxctx.fillStyle = DOT_COLOR;
+  for(const d of dots){
+    fxctx.globalAlpha = Math.max(0, d.life);
+    fxctx.beginPath();
+    fxctx.arc(d.x, d.y, DOT_R, 0, Math.PI*2);
+    fxctx.fill();
+  }
+  fxctx.restore();
+
+  fxctx.save();
+  fxctx.fillStyle = "rgba(255,255,255,0.55)";
+  fxctx.shadowColor = "rgba(255,255,255,0.25)";
+  fxctx.shadowBlur = 8;
+  for(const p of debris){
+    fxctx.globalAlpha = Math.max(0, p.life);
+    fxctx.beginPath();
+    fxctx.arc(p.x, p.y, 2.0, 0, Math.PI*2);
+    fxctx.fill();
+  }
+  fxctx.restore();
+
+  drawHearts();
+}
+
+/* ===========================================================
+   СЦЕНАРИЙ
+   =========================================================== */
+function showSlide(i){
+  const s = SLIDES[i];
+  lovePhoto.src = s.src;
+  photoCaption.textContent = s.text;
+  photoCard.classList.add("show");
+  glowMode = "photo";
+}
+function hideSlide(){
+  photoCard.classList.remove("show");
+  glowMode = "none";
+}
+
+showFXText("3");
+
+setTimeout(()=> explodeDots(3.0,140), T.explode3);
+setTimeout(()=> showFXText("2"),      T.show2);
+
+setTimeout(()=> explodeDots(3.1,160), T.explode2);
+setTimeout(()=> showFXText("1"),      T.show1);
+
+setTimeout(()=> explodeDots(3.8,260), T.explode1);
+setTimeout(()=> { dots=[]; debris=[]; }, T.clearAfter1);
+
+/* ✅ Слайды 1..5 — теперь с нормальной паузой */
+let time = T.slidesStart;
+for(let i=0;i<SLIDES.length;i++){
+  setTimeout(()=> showSlide(i), time);
+
+  const hideAt = time + T.slideDuration;
+  setTimeout(()=> hideSlide(), hideAt);
+
+  time = hideAt + T.pauseBetween;
+}
+T.finalShow = time + 200;
+
+/* ✅ Финал — без свечения */
+setTimeout(()=> {
+  finalWrap.classList.remove("hidden");
+  finalWrap.classList.add("show");
+  glowMode = "none";   // отключаем свечение в финале
+  hearts = [];         // очищаем все сердечки
+}, T.finalShow);
+
+/* ===========================================================
+   Главный цикл
+   =========================================================== */
+function loop(){
+  drawRain();
+  stepFX();
+  drawFX();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+/* Проверка загрузки фоток */
+lovePhoto.addEventListener("error", () => {
+  console.warn("Не найдено фото:", lovePhoto.src);
+});
+finalImg.addEventListener("error", () => {
+  console.warn("Не найдено финальное фото:", finalImg.src);
+});
+</script>
+</body>
+</html>
